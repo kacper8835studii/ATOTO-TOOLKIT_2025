@@ -1,0 +1,1 @@
+Trigger BambuPrinterLAN APK build on 2026-07-30.
