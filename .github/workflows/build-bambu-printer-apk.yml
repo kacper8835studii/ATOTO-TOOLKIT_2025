@@ -1,0 +1,70 @@
+name: Build BambuPrinterLAN APK
+
+on:
+  push:
+    branches:
+      - temp-bambu-printer-apk-build-20260730
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout trigger repository
+        uses: actions/checkout@v4
+
+      - name: Checkout BambuPrinterLAN source
+        uses: actions/checkout@v4
+        with:
+          repository: cafepromenade/BambuPrinterLAN
+          ref: main
+          path: BambuPrinterLAN
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android packages
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;27.0.12077973" "cmake;3.22.1"
+
+      - name: Create release signing key
+        working-directory: BambuPrinterLAN
+        run: |
+          mkdir -p .signing
+          keytool -genkeypair -keystore .signing/release.jks -alias bambuprinterlan -keyalg RSA -keysize 2048 -validity 10000 -storepass bambuprinterlan-local -keypass bambuprinterlan-local -dname "CN=Bambu Printer LAN, OU=Release, O=Bambu Printer LAN, C=PL"
+
+      - name: Build signed release APK
+        working-directory: BambuPrinterLAN
+        env:
+          RELEASE_STORE_FILE: ${{ github.workspace }}/BambuPrinterLAN/.signing/release.jks
+          RELEASE_STORE_PASSWORD: bambuprinterlan-local
+          RELEASE_KEY_ALIAS: bambuprinterlan
+          RELEASE_KEY_PASSWORD: bambuprinterlan-local
+        run: |
+          echo "sdk.dir=$ANDROID_SDK_ROOT" > local.properties
+          chmod +x ./gradlew
+          ./gradlew :app:assembleRelease --no-daemon --stacktrace
+
+      - name: Prepare APK
+        run: |
+          cp BambuPrinterLAN/app/build/outputs/apk/release/app-release.apk BambuPrinterLAN-signed-release.apk
+          sha256sum BambuPrinterLAN-signed-release.apk > BambuPrinterLAN-signed-release.apk.sha256
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: BambuPrinterLAN-signed-release
+          path: |
+            BambuPrinterLAN-signed-release.apk
+            BambuPrinterLAN-signed-release.apk.sha256
+          if-no-files-found: error
+          retention-days: 1
